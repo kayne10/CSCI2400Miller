@@ -1,0 +1,231 @@
+#include <stdio.h>
+#include "cs1300bmp.h"
+#include <iostream>
+#include <fstream>
+#include "Filter.h"
+ 
+using namespace std;
+ 
+#include "rtdsc.h"
+ 
+// Testing rsync
+ 
+//
+// Forward declare the functions
+//
+Filter * readFilter(string filename);
+double applyFilter(Filter *filter, cs1300bmp *input, cs1300bmp *output);
+ 
+int main(int argc, char **argv)
+{
+ 
+  if ( argc < 2) {
+    fprintf(stderr,"Usage: %s filter inputfile1 inputfile2 .... \n", argv[0]);
+  }
+ 
+  //
+  // Convert to C++ strings to simplify manipulation
+  //
+  string filtername = argv[1];
+ 
+  //
+  // remove any ".filter" in the filtername
+  //
+  string filterOutputName = filtername;
+  string::size_type loc = filterOutputName.find(".filter");
+  if (loc != string::npos) {
+    //
+    // Remove the ".filter" name, which should occur on all the provided filters
+    //
+    filterOutputName = filtername.substr(0, loc);
+  }
+ 
+  Filter *filter = readFilter(filtername);
+ 
+    double sum = 0.0;
+    int samples = 0;
+     
+    /* Initialize and declare outside of loops to avoid repetitive
+     * initializations and declarations
+     */
+    double sample;
+   
+    struct cs1300bmp *input = new struct cs1300bmp;
+    struct cs1300bmp *output = new struct cs1300bmp;
+ 
+  for (int inNum = 2; inNum < argc; inNum++) {
+    string inputFilename = argv[inNum];
+    string outputFilename = "filtered-" + filterOutputName + "-" + inputFilename;
+ 
+    // Replace ok variable with direct function call
+     
+    if (cs1300bmp_readfile( (char *) inputFilename.c_str(), input)) {
+      sample = applyFilter(filter, input, output);
+      sum += sample;
+      samples++;
+      cs1300bmp_writefile((char *) outputFilename.c_str(), output);
+    }
+  }
+  fprintf(stdout, "Average cycles per sample is %f\n", sum / samples);
+ 
+}
+ 
+struct Filter *
+readFilter(string filename)
+{
+  ifstream input(filename.c_str());
+ 
+  if ( ! input.bad() ) {
+    int size = 0;
+    input >> size;
+    Filter *filter = new Filter(size);
+    int div;
+    input >> div;
+    filter -> setDivisor(div);
+    for (int i=0; i < size; i++) {
+      for (int j=0; j < size; j++) {
+    int value;
+    input >> value;
+    filter -> set(i,j,value);
+      }
+    }
+    return filter;
+  }
+  return NULL;
+}
+ 
+ 
+double
+applyFilter(struct Filter *filter, cs1300bmp *input, cs1300bmp *output)
+{
+    long long cycStart, cycStop;
+    cycStart = rdtscll();
+     
+    /* As compared to the initial form, having a pointer set to another 
+       *pointer requires multiple accesses to memory, in this fashion it only
+       *requires one. Now this memory is a local variable
+    */
+    int s = filter -> dim;      //dim was put into public and replaces getsize()
+    int d = filter -> divisor;  //divisor was put into public and replaces getdivsior()
+    int w = input -> width;
+    int h = input -> height;
+    output -> width = w;
+    output -> height = h;
+    --w;
+    --h;
+     
+    // Perfect squares
+     
+    int get[s][s];
+    for(int a = 0; a < s; ++a)
+    {
+        for(int b = 0; b < s; ++b)
+        {
+            get[a][b] = filter->get(a, b);
+        }
+    }
+     
+    /* Laterally walking through row three times then moves down column
+       Unroll loops and place in proper order for C
+       Placing column first allows row to be proper iteration as C reqs
+     
+       Caching with the w and h
+       attempted implementing an initializtion after int col=1; no sig result
+       Picture goes black if incrementer is changed?? 
+    */
+    
+      int v, vv, vvv, a, aa, aaa, l, ll, lll = 0;
+     
+             
+    
+    for(short int col = 1; col < w; col = col + 1)
+    {
+        for(short int row = 1; row < h; row = row + 1)
+        {
+           
+           
+           
+            short int val = v + a + l;
+             
+            short int val2 = vv + aa + ll;
+             
+            short int val3 = vvv + aaa + lll;
+             
+            v = input -> color[col - 1][0][row - 1] * get[0][0];
+            a = input -> color[col][0][row - 1] * get[0][1];
+            l = input -> color[col + 1][0][row - 1] * get[0][2];
+             
+             
+            v += input -> color[col - 1][0][row] * get[1][0];
+            a += input -> color[col][0][row] * get[1][1];
+            l += input -> color[col + 1][0][row] * get[1][2];
+             
+             
+            v += input -> color[col - 1][0][row + 1] * get[2][0];
+            a += input -> color[col][0][row + 1] * get[2][1];
+            l += input -> color[col + 1][0][row + 1] * get[2][2];
+            /////////////////////////////////////////////////////
+            vv = input -> color[col - 1][1][row - 1] * get[0][0];
+            aa = input -> color[col][1][row - 1] * get[0][1];
+            ll = input -> color[col + 1][1][row - 1] * get[0][2];
+             
+             
+            vv += input -> color[col - 1][1][row] * get[1][0];
+            aa += input -> color[col][1][row] * get[1][1];
+            ll += input -> color[col + 1][1][row] * get[1][2];
+             
+             
+            vv += input -> color[col - 1][1][row + 1] * get[2][0];
+            aa += input -> color[col][1][row + 1] * get[2][1];
+            ll += input -> color[col + 1][1][row + 1] * get[2][2];
+            /////////////////////////////////////////////////////
+            vvv = input -> color[col - 1][2][row - 1] * get[0][0];
+            aaa = input -> color[col][2][row - 1] * get[0][1];
+            lll = input -> color[col + 1][2][row - 1] * get[0][2];
+             
+             
+            vvv += input -> color[col - 1][2][row] * get[1][0];
+            aaa += input -> color[col][2][row] * get[1][1];
+            lll += input -> color[col + 1][2][row] * get[1][2];
+             
+             
+            vvv += input -> color[col - 1][2][row + 1] * get[2][0];
+            aaa += input -> color[col][2][row + 1] * get[2][1];
+            lll += input -> color[col + 1][2][row + 1] * get[2][2];
+             
+           
+            val /= d;
+             
+            val2 /= d;
+             
+            val3 /= d;
+             
+            // Checking bounds 
+             
+            if (val < 0) val = 0;
+             
+            if (val2 < 0) val2 = 0;
+             
+            if (val3 < 0) val3 = 0;
+             
+            if (val > 255) val = 255;
+             
+            if (val2 > 255) val2 = 255;
+             
+            if (val3 > 255) val3 = 255;
+             
+            output -> color[col][0][row] = val;
+             
+            output -> color[col][1][row] = val2;
+             
+            output -> color[col][2][row] = val3;
+        }
+    }
+     
+    cycStop = rdtscll();
+    double diff = cycStop - cycStart;
+    double diffPerPixel = diff / (w * h);
+    fprintf(stderr, "Took %f cycles to process, or %f cycles per pixel\n",
+    diff, diff / (w * h));
+    return diffPerPixel;
+}
